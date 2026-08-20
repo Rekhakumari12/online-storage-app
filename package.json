@@ -1,0 +1,11 @@
+{
+  "name": "online-storage-app",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "mime-types": "^3.0.2"
+  }
+}
