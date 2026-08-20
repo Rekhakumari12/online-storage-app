@@ -22,6 +22,7 @@ const server = http.createServer(async (req, res) => {
       } else {
         const readStream = fileHandle.createReadStream();
         res.setHeader('Content-Type', mime.contentType(url.slice(1)));
+        res.setHeader('Content-length', stats.size);
         if (queryParam.action === 'download') {
           res.setHeader(
             'Content-Disposition',
