@@ -21,7 +21,10 @@ const server = http.createServer(async (req, res) => {
         serveDirectory(req, res);
       } else {
         const readStream = fileHandle.createReadStream();
-        res.setHeader('Content-Type', mime.contentType(url.slice(1)));
+        res.setHeader(
+          'Content-Type',
+          mime.contentType(url.slice(url.lastIndexOf('/') + 1)),
+        );
         res.setHeader('Content-length', stats.size);
         if (queryParam.action === 'download') {
           res.setHeader(
@@ -39,12 +42,13 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function serveDirectory(req, res) {
-  const itemList = await readdir(`./storage${decodeURIComponent(req.url)}`);
+  const [url, queryString] = req.url.split('?');
+  const itemList = await readdir(`./storage${decodeURIComponent(url)}`);
   let dynamicHtml = '';
   itemList.forEach((item) => {
     dynamicHtml += `<li> ${item}
-    <a href=".${req.url === '/' ? '' : req.url}/${item}?action=open">Open</a>
-    <a href=".${req.url === '/' ? '' : req.url}/${item}?action=download">Download</a>
+    <a href=".${url === '/' ? '' : url}/${item}?action=open">Open</a>
+    <a href=".${url === '/' ? '' : url}/${item}?action=download">Download</a>
     </li>`;
   });
   const htmlBoilerplate = await readFile('./index.html', 'utf-8');
