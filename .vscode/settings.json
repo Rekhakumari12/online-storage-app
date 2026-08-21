@@ -1,0 +1,18 @@
+{
+  "files.associations": {
+    "*.js": "javascript"
+  },
+  "cSpell.enabled": true,
+  "cSpell.diagnosticLevel": "Warning",
+  "cSpell.enabledFileTypes": {
+    "javascript": true,
+    "javascriptreact": true,
+    "json": true,
+    "markdown": true
+  },
+  "liveServer.settings.ignoreFiles": [
+    "**/.vscode/**",
+    "**/node_modules/**",
+    "**/storage/**" // Ignore your uploads directory
+  ]
+}
