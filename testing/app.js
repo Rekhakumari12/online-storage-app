@@ -18,3 +18,4 @@ input.addEventListener('change', (e) => {
 
   xhr.send(file);
 });
+// env -u GITHUB_TOKEN git push
