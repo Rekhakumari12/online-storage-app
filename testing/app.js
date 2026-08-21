@@ -18,5 +18,6 @@ input.addEventListener('change', (e) => {
 
   xhr.send(file);
 });
+// env -u GITHUB_TOKEN git push
 // env -u GITHUB_TOKEN gh auth switch --user Rekhakumari12
 // env -u GITHUB_TOKEN git push --set-upstream origin main.
