@@ -1,0 +1,22 @@
+fs
+│
+├── Reading
+│   ├── readFile
+│   └── readFileSync
+│
+├── Writing
+│   ├── writeFile
+│   └── writeFileSync
+│
+├── Directories
+│   ├── mkdir
+│   └── readdir
+│
+├── File operations
+│   ├── rename
+│   ├── unlink
+│   └── stat
+│
+└── Streams
+    ├── createReadStream
+    └── createWriteStream
