@@ -26,9 +26,9 @@ function App() {
   function handleOnChange(e) {
     const file = e.target.files[0]; // e.target.files - gives you array od files
     const xhr = new XMLHttpRequest(); // XHR used for progress instead of fetch
-    xhr.open("POST", basePath, true); // Post request
+    xhr.open("POST", `${basePath}/${file.name}`, true); // Post request
 
-    xhr.setRequestHeader("filename", file.name); // #1 File name will be send from here to server
+    // xhr.setRequestHeader("filename", file.name); // #1 File name will be send from here to server
     xhr.addEventListener("load", () => {
       console.log(xhr.status, xhr.responseText);
       if (xhr.status === 409) {
@@ -53,12 +53,17 @@ function App() {
   const handleRenameFileSave = async (oldFileName, fileId) => {
     setEdit((prev) => ({ ...prev, isEdit: false, id: fileId }));
     try {
-      const response = await fetch(basePath, {
+      const response = await fetch(`${basePath}/${oldFileName}`, {
         method: "PATCH",
-        body: JSON.stringify({ oldFileName, newFileName }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: newFileName
+          ? JSON.stringify({ newFileName })
+          : JSON.stringify({ newFileName: oldFileName }),
       });
 
-      const res = await response.text();
+      const res = await response.json();
       console.log(res);
       getDirectoryItems();
     } catch (e) {
@@ -68,13 +73,20 @@ function App() {
 
   const handleDelete = async (fileName) => {
     try {
-      const response = await fetch(`${basePath}`, {
-        method: "DELETE",
-        body: fileName,
-      });
-      const resp = await response.text();
-      console.log(resp);
-      getDirectoryItems();
+      let doubleCheck = confirm("Are you sure you want to delete this file?");
+      if (doubleCheck) {
+        const response = await fetch(`${basePath}/${fileName}`, {
+          method: "DELETE",
+        });
+        const resp = await response.json();
+        if (response.status === 200) {
+          getDirectoryItems();
+        } else {
+          alert("Error while deleting the file, Try again");
+        }
+      } else {
+        console.log("Deletion cancelled.");
+      }
     } catch (e) {
       console.log(e);
     }
@@ -109,12 +121,12 @@ function App() {
             const encodedPath = encodeURI(itemPath);
 
             return (
-              <li key={i} className="file-item">
+              <li key={item.id} className="file-item">
                 <div className="file-name">
                   <span className="file-icon">
                     {item.isDirectory ? "DIR" : "FILE"}
                   </span>
-                  {edit.isEdit && edit.id === item.id ? (
+                  {!item.isDirectory && edit.isEdit && edit.id === item.id ? (
                     <input
                       type="text"
                       onChange={(e) => setNewFileName(e.target.value)}
