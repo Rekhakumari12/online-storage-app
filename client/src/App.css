@@ -16,6 +16,11 @@
 .app-header {
   margin-bottom: 28px;
 }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .eyebrow {
   margin: 0 0 8px;
   color: #16806b;
@@ -38,6 +43,85 @@ h1 {
 }
 .upload-button input {
   display: none;
+}
+.create-folder-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid #b8d2c8;
+  border-radius: 8px;
+  background: #f3f9f6;
+  color: #18302b;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+.create-folder-button span {
+  color: #16806b;
+  font-size: 20px;
+  line-height: 1;
+}
+.create-folder-button:hover {
+  border-color: #16806b;
+}
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(15 35 29 / 48%);
+}
+.folder-modal {
+  width: min(100%, 420px);
+  padding: 24px;
+  border: 1px solid #d5e3dd;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgb(15 35 29 / 24%);
+}
+.folder-modal h2 {
+  margin: 0 0 22px;
+  font-size: 22px;
+}
+.folder-name-label {
+  display: block;
+  margin-bottom: 7px;
+  color: #66817a;
+  font-size: 14px;
+}
+.folder-name-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #b8d2c8;
+  border-radius: 6px;
+  color: #18302b;
+  font: inherit;
+}
+.folder-name-input:focus {
+  border-color: #16806b;
+  outline: 2px solid rgb(22 128 107 / 18%);
+}
+.folder-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+.folder-submit-button {
+  padding: 8px 12px;
+  border: 1px solid #16806b;
+  border-radius: 6px;
+  background: #16806b;
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+.folder-submit-button:hover {
+  background: #116b5a;
 }
 .progress-row {
   margin-bottom: 20px;
@@ -139,6 +223,14 @@ h1 {
     width: 100%;
     text-align: center;
     box-sizing: border-box;
+  }
+  .header-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .create-folder-button {
+    justify-content: center;
   }
   .file-actions {
     justify-content: flex-start;
