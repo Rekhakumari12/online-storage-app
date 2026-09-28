@@ -60,15 +60,18 @@ function DirectoryView() {
     setEdit((prev) => ({ ...prev, isEdit: false, id: fileId }));
     setNewFileName("");
     try {
-      const response = await fetch(`${basePath}/${dirPath}${oldFileName}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        `${basePath}/files/${dirPath}${oldFileName}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: newFileName
+            ? JSON.stringify({ newFileName: `${dirPath}${newFileName}` })
+            : JSON.stringify({ newFileName: oldFileName }),
         },
-        body: newFileName
-          ? JSON.stringify({ newFileName: `${dirPath}${newFileName}` })
-          : JSON.stringify({ newFileName: oldFileName }),
-      });
+      );
 
       const res = await response.json();
       console.log(res.message);
