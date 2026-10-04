@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
-import directoryRouter from "./routes/directoryRoutes.js";
-import fileRouter from "./routes/fileRoutes.js";
+import directoryRouter from "./routes/directoryRoutes-old.js";
+import fileRouter from "./routes/fileRoutes-old.js";
 
 const app = express();
 const port = 8080;
@@ -19,7 +19,7 @@ app.use((req, res, next) => {
 });
 
 app.use("/directory", directoryRouter);
-app.use("/file", fileRouter);
+app.use("/files", fileRouter);
 
 app.listen(port, () => {
   console.log("Server is running ");

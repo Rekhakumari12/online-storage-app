@@ -1,8 +1,7 @@
+import crypto from "crypto";
 import express from "express";
-import { mkdir, open } from "fs/promises";
+import { mkdir, open, readdir } from "fs/promises";
 import path from "path";
-import directoriesData from "../directoriesDB.json" with { type: "json" };
-import filesData from "../filesDB.json" with { type: "json" };
 
 const router = express.Router();
 
@@ -18,22 +17,29 @@ const getStoragePath = (relativePath) => {
     : null;
 };
 
-router.get("{/:id}", async (req, res) => {
-  const { id } = req.params;
-  if (!id) {
-    const directoryData = directoriesData[0];
-    const files = directoryData.files.map((fileId) =>
-      filesData.find((file) => fileId === file.id),
-    );
-    console.log(directoryData, files);
-    res.json({ ...directoryData, files });
-  } else {
-    const directoryData = directoriesData.find((folder) => folder.id === id);
-    directoryData.files = directoryData.files.map((fileId) =>
-      filesData.find((file) => fileId === file.id),
-    );
-    console.log(directoryData);
-    res.json(directoryData);
+router.get("{/*dirname}", async (req, res) => {
+  const { dirname } = req.params;
+  const transformPath = `${dirname ? dirname.join("/") : ""}`;
+  const fullDirPath = getStoragePath(transformPath);
+  if (!fullDirPath) {
+    return res.status(400).json({ message: "Invalid directory path" });
+  }
+
+  try {
+    const fileList = await readdir(fullDirPath, {
+      withFileTypes: true,
+    });
+
+    const transformedItemList = fileList.map((item, i) => ({
+      name: item.name,
+      isDirectory: item.isDirectory(),
+      id: crypto.randomUUID(),
+    }));
+
+    res.json(transformedItemList);
+  } catch (e) {
+    console.log(e.message);
+    res.json({ message: e.message });
   }
 });
 
