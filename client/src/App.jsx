@@ -8,6 +8,10 @@ const router = createBrowserRouter([
     path: "/*",
     element: <DirectoryView />,
   },
+  {
+    path: "/directory/:dirId",
+    element: <DirectoryView />,
+  },
 ]);
 
 function App() {

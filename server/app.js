@@ -21,6 +21,10 @@ app.use((req, res, next) => {
 app.use("/directory", directoryRouter);
 app.use("/file", fileRouter);
 
+app.use((err, req, res, next) => {
+  res.status(500).json({ message: "Something went wrong" });
+});
+
 app.listen(port, () => {
   console.log("Server is running ");
 });

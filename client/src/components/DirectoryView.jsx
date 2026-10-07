@@ -1,130 +1,119 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { useCallback, useEffect, useState } from "react";
+import { useParams } from "react-router";
+import {
+  createDirectory,
+  deleteDirectory,
+  deleteFile,
+  getDirectory,
+  renameDirectory,
+  renameFile,
+  storageBaseUrl,
+} from "../api/storageApi";
+import { DirectoryEntry, FileEntry } from "./DirectoryEntries";
 import { Modal } from "./Modal";
-
-const basePath = "http://localhost:8080";
 
 function DirectoryView() {
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
-
-  const [directoryItems, setDirectoryItems] = useState([]);
-
+  const [directory, setDirectory] = useState({ files: [], directories: [] });
   const [progress, setProgress] = useState(0);
-  const [edit, setEdit] = useState({ isEdit: false, id: null });
-  const [newFileName, setNewFileName] = useState();
+  const [editing, setEditing] = useState({ type: null, id: null });
+  const [newName, setNewName] = useState("");
 
-  console.log(edit, newFileName);
+  const { dirId = "" } = useParams();
 
-  const { "*": dirname } = useParams();
-  const dirPath = dirname ? `${dirname}/` : "";
-  // console.log(dirname);
-
-  const getDirectoryItems = async () => {
-    const response = await fetch(`${basePath}/directory/${dirPath}`);
-    const json = await response.json();
-    setDirectoryItems(json);
-  };
+  const getDirectoryItems = useCallback(async () => {
+    try {
+      setDirectory(await getDirectory(dirId));
+    } catch (error) {
+      alert(error.message);
+    }
+  }, [dirId]);
 
   useEffect(() => {
     getDirectoryItems();
-  }, [dirPath]);
+  }, [getDirectoryItems]);
 
-  function handleOnChange(e) {
-    const file = e.target.files[0]; // e.target.files - gives you array od files
-    const xhr = new XMLHttpRequest(); // XHR used for progress instead of fetch
-    xhr.open("POST", `${basePath}/files/${dirPath}${file.name}`, true); // Post request
+  function handleUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
 
-    // xhr.setRequestHeader("filename", file.name); // #1 File name will be send from here to server
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${storageBaseUrl}/file/${dirId}`, true);
+    xhr.setRequestHeader("filename", file.name);
     xhr.addEventListener("load", () => {
-      console.log(xhr.status, xhr.responseText);
-      if (xhr.status === 409) {
-        // if file already exists on server, then alert user
-        alert(xhr.responseText);
+      if (xhr.status < 200 || xhr.status >= 300) {
+        alert(xhr.responseText || "File upload failed");
       }
       getDirectoryItems();
     });
-    // track upload progress, without upload object track download progress, shows bytes uploaded
-    xhr.upload.addEventListener("progress", (e) => {
-      const totalProgress = `${Math.floor((e.loaded / e.total) * 100)}`;
-      console.log(totalProgress);
-      setProgress(totalProgress);
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) {
+        setProgress(Math.floor((event.loaded / event.total) * 100));
+      }
     });
     xhr.send(file);
   }
 
-  const handleFileRename = (itemId) => {
-    setEdit((prev) => ({ ...prev, isEdit: true, id: itemId }));
+  const startRename = (type, item) => {
+    setEditing({ type, id: item.id });
+    setNewName(item.name);
   };
 
-  const handleRenameFileSave = async (oldFileName, fileId) => {
-    setEdit((prev) => ({ ...prev, isEdit: false, id: fileId }));
-    setNewFileName("");
-    try {
-      const response = await fetch(
-        `${basePath}/files/${dirPath}${oldFileName}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: newFileName
-            ? JSON.stringify({ newFileName: `${dirPath}${newFileName}` })
-            : JSON.stringify({ newFileName: oldFileName }),
-        },
-      );
-
-      const res = await response.json();
-      console.log(res.message);
-      getDirectoryItems();
-    } catch (e) {
-      console.log(e);
+  const saveRename = async () => {
+    const trimmedName = newName.trim();
+    if (!trimmedName) {
+      alert("Please enter a name");
+      return;
     }
-  };
 
-  const handleDelete = async (fileName) => {
     try {
-      let doubleCheck = confirm("Are you sure you want to delete this file?");
-      if (doubleCheck) {
-        const response = await fetch(
-          `${basePath}/files/${dirPath}${fileName}`,
-          {
-            method: "DELETE",
-          },
-        );
-        const resp = await response.json();
-        if (response.status === 200) {
-          console.log(resp.message);
-          getDirectoryItems();
-        } else {
-          alert("Error while deleting the file, Try again");
-        }
+      if (editing.type === "directory") {
+        await renameDirectory(editing.id, trimmedName);
       } else {
-        console.log("Deletion cancelled.");
+        await renameFile(editing.id, trimmedName);
       }
-    } catch (e) {
-      console.log(e);
+      setEditing({ type: null, id: null });
+      setNewName("");
+      await getDirectoryItems();
+    } catch (error) {
+      alert(error.message);
     }
   };
 
-  // console.log(`${basePath} ${dirname}`);
+  const handleDelete = async (type, item) => {
+    const message =
+      type === "directory"
+        ? "Delete this folder and all files and subfolders inside it? This cannot be undone."
+        : "Are you sure you want to delete this file?";
+    if (!confirm(message)) return;
 
-  const handleCreateFolder = async (foldername) => {
-    console.log(foldername);
-    const URL = `${basePath}/directory/${dirPath}${foldername}`;
     try {
-      const response = await fetch(URL, {
-        method: "POST",
-      });
-
-      const res = await response.json();
-      console.log(res.message);
-      getDirectoryItems();
-    } catch (e) {
-      console.log(e);
+      if (type === "directory") {
+        await deleteDirectory(item.id);
+      } else {
+        await deleteFile(item.id);
+      }
+      await getDirectoryItems();
+    } catch (error) {
+      alert(error.message);
     }
-    setIsCreateFolderOpen(false);
   };
 
+  const handleCreateFolder = async (folderName) => {
+    const trimmedName = folderName.trim();
+    if (!trimmedName) {
+      alert("Please enter folder name");
+      return;
+    }
+
+    try {
+      await createDirectory(dirId, trimmedName);
+      setIsCreateFolderOpen(false);
+      await getDirectoryItems();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
   return (
     <main className="storage-app">
       <header className="app-header">
@@ -143,7 +132,7 @@ function DirectoryView() {
           </button>
           <label className="upload-button">
             Upload file
-            <input type="file" onChange={handleOnChange} />
+            <input type="file" onChange={handleUpload} />
           </label>
         </div>
       </header>
@@ -158,70 +147,30 @@ function DirectoryView() {
           <span>Location</span>
         </div>
         <ul className="file-list">
-          {directoryItems.map((item, i) => {
-            const encodedPath = encodeURI(item.name);
-
-            return (
-              <li key={item.id} className="file-item">
-                <div className="file-name">
-                  <span className="file-icon">
-                    {item.isDirectory ? "DIR" : "FILE"}
-                  </span>
-                  {item.name}
-                  {edit.isEdit && edit.id === item.id && (
-                    <input
-                      type="text"
-                      onChange={(e) => setNewFileName(e.target.value)}
-                      value={newFileName}
-                    />
-                  )}
-                </div>
-                <>
-                  <div className="file-actions">
-                    {item.isDirectory ? (
-                      <div className="file-actions">
-                        <Link to={`./${encodedPath}`}>Open</Link>
-                      </div>
-                    ) : (
-                      <a
-                        href={`${basePath}/files/${dirPath}${encodedPath}?action=open`}
-                      >
-                        Open
-                      </a>
-                    )}
-                    {!item.isDirectory && (
-                      <a
-                        href={`${basePath}/files/${dirPath}${encodedPath}?action=download`}
-                      >
-                        Download
-                      </a>
-                    )}
-                    {edit.isEdit && edit.id === item.id ? (
-                      <button
-                        className="action-button"
-                        onClick={() => handleRenameFileSave(item.name, item.id)}
-                      >
-                        Save
-                      </button>
-                    ) : (
-                      <button
-                        className="action-button"
-                        onClick={() => handleFileRename(item.id)}
-                      >
-                        Rename
-                      </button>
-                    )}
-                    <button
-                      className="action-button danger"
-                      onClick={() => handleDelete(item.name)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </>
-              </li>
-            );
-          })}
+          {directory.directories.map((item) => (
+            <DirectoryEntry
+              key={item.id}
+              item={item}
+              isEditing={editing.type === "directory" && editing.id === item.id}
+              name={newName}
+              onNameChange={setNewName}
+              onRename={() => startRename("directory", item)}
+              onSave={saveRename}
+              onDelete={() => handleDelete("directory", item)}
+            />
+          ))}
+          {directory.files.map((item) => (
+            <FileEntry
+              key={item.id}
+              item={item}
+              isEditing={editing.type === "file" && editing.id === item.id}
+              name={newName}
+              onNameChange={setNewName}
+              onRename={() => startRename("file", item)}
+              onSave={saveRename}
+              onDelete={() => handleDelete("file", item)}
+            />
+          ))}
         </ul>
       </section>
 

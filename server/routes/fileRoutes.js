@@ -1,6 +1,7 @@
 import express from "express";
 import { createWriteStream } from "fs";
-import { open, rm, writeFile } from "fs/promises";
+import { rm, writeFile } from "fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "path";
 import { pipeline } from "stream/promises";
 import directoriesData from "../directoriesDB.json" with { type: "json" };
@@ -24,6 +25,10 @@ router.get("/:id", (req, res, next) => {
   const { id } = req.params;
 
   const file = filesData.find((file) => file.id === id);
+  if (!file) {
+    return res.status(404).json({ message: "File not found" });
+  }
+
   const fullFilePath = getStoragePath(`${id}${file.extension}`);
 
   if (!fullFilePath || fullFilePath === storageRoot) {
@@ -31,22 +36,34 @@ router.get("/:id", (req, res, next) => {
   }
 
   if (req.query.action === "download") {
-    res.set("Content-Disposition", "attachment");
+    res.set("Content-Disposition", `attachment; filename=${file.name}`);
   }
-  res.sendFile(fullFilePath, (err) => {
+  return res.sendFile(fullFilePath, (err) => {
     if (err) {
       if (res.headersSent) return next(err);
-      res.status(404).json({ error: "File not found!" });
+      return res.status(404).json({ error: "File not found!" });
     }
   });
 });
 
-router.post("/:filename", async (req, res) => {
-  const { filename } = req.params;
-  const parentDirId = req.headers.parentdirid || directoriesData[0].id;
+router.post("{/:parentDirId}", async (req, res) => {
+  const requestedParentDirId = req.params.parentDirId;
+  const parentDirId =
+    (Array.isArray(requestedParentDirId)
+      ? requestedParentDirId[0]
+      : requestedParentDirId) || directoriesData[0].id;
+  const directoryData = directoriesData.find((dir) => dir.id === parentDirId);
+  if (!directoryData) {
+    return res.status(404).json({ message: "Directory not found" });
+  }
+
+  const filename = req.get("filename")?.trim();
+  if (!filename) {
+    return res.status(400).json({ message: "Filename is required" });
+  }
 
   const extension = path.extname(filename);
-  const randomId = crypto.randomUUID();
+  const randomId = randomUUID();
 
   const fullFileName = `${randomId}${extension}`;
   const destLocation = getStoragePath(fullFileName);
@@ -55,19 +72,7 @@ router.post("/:filename", async (req, res) => {
     return res.status(400).json({ message: "Invalid file path" });
   }
 
-  const isFileExist = await open(destLocation, "r")
-    .then(async () => {
-      await fileHandle.close();
-      return true;
-    })
-    .catch(() => false);
-
-  if (isFileExist) {
-    res.status(409).json({ message: "File already exist" });
-    return;
-  }
-
-  const writeStream = createWriteStream(destLocation);
+  const writeStream = createWriteStream(destLocation, { flags: "wx" });
 
   try {
     await pipeline(req, writeStream);
@@ -78,55 +83,78 @@ router.post("/:filename", async (req, res) => {
       parentDirId,
     });
 
-    const directoryData = directoriesData.find((dir) => dir.id === parentDirId);
     directoryData.files.push(randomId);
 
     await writeFile("./filesDB.json", JSON.stringify(filesData));
     await writeFile("./directoriesDB.json", JSON.stringify(directoriesData));
 
-    res.json({ message: "File Uploaded Successfully" });
+    return res.json({ message: "File Uploaded Successfully" });
   } catch (e) {
-    console.log(e);
-    res.json({ message: e.message });
+    const fileIndex = filesData.findIndex((file) => file.id === randomId);
+    if (fileIndex !== -1) filesData.splice(fileIndex, 1);
+    directoryData.files = directoryData.files.filter(
+      (fileId) => fileId !== randomId,
+    );
+    await Promise.all([
+      writeFile("./filesDB.json", JSON.stringify(filesData)),
+      writeFile("./directoriesDB.json", JSON.stringify(directoriesData)),
+    ]).catch(() => {});
+    await rm(destLocation, { force: true }).catch(() => {});
+    console.error(e.message);
+    return res.status(500).json({ message: "File upload failed" });
   }
 });
 
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
-  console.log(id);
   const fileIndex = filesData.findIndex((file) => file.id === id);
+  if (fileIndex === -1) {
+    return res.status(404).json({ message: "File not found" });
+  }
+
   const file = filesData[fileIndex];
-
-  const directory = directoriesData.find((dir) => dir.id === file.parentDirId);
-  console.log(directory);
-  directory.files = directory.files.filter((fileId) => fileId !== id);
-
   const fullFilePath = getStoragePath(`${id}${file.extension}`);
   if (!fullFilePath || fullFilePath === storageRoot) {
     return res.status(400).json({ message: "Invalid file path" });
   }
 
   try {
-    await rm(fullFilePath, { recursive: true });
+    await rm(fullFilePath, { force: true });
+
+    directoriesData.forEach((directory) => {
+      directory.files = directory.files.filter((fileId) => fileId !== id);
+    });
     filesData.splice(fileIndex, 1);
-    console.log(directoriesData);
     await writeFile("./directoriesDB.json", JSON.stringify(directoriesData));
     await writeFile("./filesDB.json", JSON.stringify(filesData));
-    res.json({ message: "File deleted successfully " });
+    res.json({ message: "File deleted successfully" });
   } catch (e) {
-    console.log(e.message);
+    console.error(e.message);
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
 router.patch("/:id", async (req, res) => {
   const { id } = req.params;
   const file = filesData.find((file) => file.id === id);
-  file.name = req.body.newFileName;
+  if (!file) {
+    return res.status(404).json({ message: "File not found" });
+  }
+
+  const newFileName = req.body?.newFileName;
+  if (typeof newFileName !== "string" || !newFileName.trim()) {
+    return res.status(400).json({ message: "A new filename is required" });
+  }
+
+  const previousName = file.name;
+  file.name = newFileName.trim();
   try {
     await writeFile("./filesDB.json", JSON.stringify(filesData));
-    res.json({ message: "File renamed successfully " });
+    return res.json({ message: "File renamed successfully" });
   } catch (e) {
-    console.log(e.message);
+    file.name = previousName;
+    console.error(e.message);
+    return res.status(500).json({ message: "File rename failed" });
   }
 });
 

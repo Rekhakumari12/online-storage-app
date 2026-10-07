@@ -14,6 +14,7 @@ export const Modal = ({ handleCreateFolder, setIsCreateFolderOpen }) => {
           Folder name
         </label>
         <input
+          required
           autoFocus
           id="folder-name"
           className="folder-name-input"
