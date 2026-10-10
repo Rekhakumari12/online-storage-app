@@ -1,22 +1,38 @@
 import express from "express";
-import { randomUUID } from "node:crypto";
 import { rm, writeFile } from "fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "path";
 import directoriesData from "../directoriesDB.json" with { type: "json" };
 import filesData from "../filesDB.json" with { type: "json" };
+import {
+  isDirectoryOwnedByUser,
+  normalizeDirectoryId,
+} from "../middlewares/ownership.js";
+import validateIdMiddleware from "../middlewares/validateIdMiddleware.js";
 
 const router = express.Router();
 
+router.param("id", validateIdMiddleware);
+router.param("parentDirId", validateIdMiddleware);
+
 const storageRoot = path.resolve("./storage");
+
+const forbiddenDirectoryResponse = (res) =>
+  res.status(403).json({ message: "You do not have access to this directory" });
 
 // directory id is optional, if not present then return the root dir
 router.get("{/:id}", async (req, res) => {
   const { id } = req.params;
+  const user = req.user;
+
   const directoryData = id
     ? directoriesData.find((folder) => folder.id === id)
-    : directoriesData[0];
+    : directoriesData.find((folder) => folder.id === user.rootDirId);
   if (!directoryData) {
     return res.status(404).json({ message: "Directory not found" });
+  }
+  if (!isDirectoryOwnedByUser(directoryData, user)) {
+    return forbiddenDirectoryResponse(res);
   }
 
   try {
@@ -39,10 +55,15 @@ router.get("{/:id}", async (req, res) => {
 });
 
 router.post("{/*parentDirId}", async (req, res) => {
-  const parentDirId = req.params.parentDirId?.[0] || directoriesData[0].id;
+  const user = req.user;
+
+  const parentDirId = req.params.parentDirId?.[0] || user.rootDirId;
   const parentDir = directoriesData.find((dir) => dir.id === parentDirId);
   if (!parentDir) {
     return res.status(404).json({ message: "Parent directory not found" });
+  }
+  if (!isDirectoryOwnedByUser(parentDir, user)) {
+    return forbiddenDirectoryResponse(res);
   }
 
   const dirname = req.get("dirname")?.trim();
@@ -62,6 +83,7 @@ router.post("{/*parentDirId}", async (req, res) => {
     parentDirId,
     files: [],
     directories: [],
+    userId: user.id,
   };
   directoriesData.push(newDirectory);
   parentDir.directories.push(id);
@@ -81,9 +103,13 @@ router.post("{/*parentDirId}", async (req, res) => {
 
 router.patch("/:id", async (req, res) => {
   const { id } = req.params;
+  const { user } = req;
   const directory = directoriesData.find((dir) => dir.id === id);
   if (!directory) {
     return res.status(404).json({ message: "Directory not found" });
+  }
+  if (!isDirectoryOwnedByUser(directory, user)) {
+    return forbiddenDirectoryResponse(res);
   }
 
   const requestedName = req.body?.newDirName;
@@ -114,19 +140,21 @@ router.patch("/:id", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
+  const { user } = req;
   const directory = directoriesData.find((dir) => dir.id === id);
 
   if (!directory) {
     return res.status(404).json({ message: "Directory not found" });
   }
-  if (directory === directoriesData[0]) {
+  if (!isDirectoryOwnedByUser(directory, user)) {
+    return forbiddenDirectoryResponse(res);
+  }
+  if (directory.id === user.rootDirId) {
     return res
       .status(400)
       .json({ message: "Cannot delete the root directory" });
   }
 
-  const normalizeDirectoryId = (parentDirId) =>
-    Array.isArray(parentDirId) ? parentDirId[0] : parentDirId;
   const parentId = normalizeDirectoryId(directory.parentDirId);
   const parentDirectory = directoriesData.find((dir) => dir.id === parentId);
   if (!parentDirectory) {
@@ -145,7 +173,12 @@ router.delete("/:id", async (req, res) => {
       const currentDirectory = directoriesData.find(
         (dir) => dir.id === currentId,
       );
-      if (!currentDirectory) continue;
+      if (
+        !currentDirectory ||
+        !isDirectoryOwnedByUser(currentDirectory, user)
+      ) {
+        continue;
+      }
 
       directoryIds.add(currentId);
       directoriesToDelete.push(currentDirectory);

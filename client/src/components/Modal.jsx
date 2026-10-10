@@ -1,6 +1,26 @@
-import { useState } from "react";
-export const Modal = ({ handleCreateFolder, setIsCreateFolderOpen }) => {
-  const [folderName, setFolderName] = useState("");
+import { useEffect, useRef } from "react";
+
+export const Modal = ({
+  title,
+  label,
+  value,
+  onChange,
+  onSubmit,
+  onCancel,
+  submitLabel,
+  selectionEnd,
+}) => {
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+
+    input.focus();
+    const end = selectionEnd ?? input.value.length;
+    input.setSelectionRange(0, Math.min(end, input.value.length));
+  }, [selectionEnd]);
+
   return (
     <div className="modal-backdrop">
       <section
@@ -9,34 +29,30 @@ export const Modal = ({ handleCreateFolder, setIsCreateFolderOpen }) => {
         aria-modal="true"
         aria-labelledby="folder-modal-title"
       >
-        <h2 id="folder-modal-title">Create folder</h2>
-        <label className="folder-name-label" htmlFor="folder-name">
-          Folder name
+        <h2 id="folder-modal-title">{title}</h2>
+        <label className="folder-name-label" htmlFor="name-input">
+          {label}
         </label>
         <input
           required
-          autoFocus
-          id="folder-name"
+          ref={inputRef}
+          id="name-input"
           className="folder-name-input"
           type="text"
-          placeholder="Enter a folder name"
-          onChange={(e) => setFolderName(e.target.value)}
-          value={folderName}
+          placeholder={`Enter ${label.toLowerCase()}`}
+          onChange={(event) => onChange(event.target.value)}
+          value={value}
         />
         <div className="folder-modal-actions">
-          <button
-            className="action-button"
-            type="button"
-            onClick={() => setIsCreateFolderOpen(false)}
-          >
+          <button className="action-button" type="button" onClick={onCancel}>
             Cancel
           </button>
           <button
             className="folder-submit-button"
             type="button"
-            onClick={() => handleCreateFolder(folderName)}
+            onClick={onSubmit}
           >
-            Create folder
+            {submitLabel}
           </button>
         </div>
       </section>

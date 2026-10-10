@@ -1,0 +1,16 @@
+[
+  {
+    "id": "e47090ad-450f-4a7e-8a15-220e2dfa0836",
+    "name": "test user",
+    "email": "test@gmail.com",
+    "password": "test@12",
+    "rootDirId": "61545a65-2fbe-41fc-b5c7-2f4758e7257d"
+  },
+  {
+    "id": "37a827b4-e55e-4ef4-9bfa-20d6a36a806f",
+    "name": "test2",
+    "email": "test2@gmail.com",
+    "password": "1234",
+    "rootDirId": "328b741f-c789-4974-94ae-9b2044997c5a"
+  }
+]

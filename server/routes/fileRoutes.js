@@ -6,10 +6,22 @@ import path from "path";
 import { pipeline } from "stream/promises";
 import directoriesData from "../directoriesDB.json" with { type: "json" };
 import filesData from "../filesDB.json" with { type: "json" };
+import {
+  isDirectoryOwnedByUser,
+  normalizeDirectoryId,
+} from "../middlewares/ownership.js";
+import validateIdMiddleware from "../middlewares/validateIdMiddleware.js";
 
 const router = express.Router();
 
 const storageRoot = path.resolve("./storage");
+const forbiddenFileResponse = (res) =>
+  res.status(403).json({ message: "You do not have access to this file" });
+
+const getParentDirectory = (file) =>
+  directoriesData.find(
+    (directory) => directory.id === normalizeDirectoryId(file.parentDirId),
+  );
 
 const getStoragePath = (relativePath) => {
   if (typeof relativePath !== "string") return null;
@@ -21,40 +33,125 @@ const getStoragePath = (relativePath) => {
     : null;
 };
 
-router.get("/:id", (req, res, next) => {
-  const { id } = req.params;
+router.param("id", validateIdMiddleware);
+router.param("parentDirId", validateIdMiddleware);
 
-  const file = filesData.find((file) => file.id === id);
-  if (!file) {
-    return res.status(404).json({ message: "File not found" });
-  }
+router
+  .route("/:id")
+  .get((req, res, next) => {
+    const { id } = req.params;
 
-  const fullFilePath = getStoragePath(`${id}${file.extension}`);
+    const file = filesData.find((file) => file.id === id);
+    if (!file) {
+      return res.status(404).json({ message: "File not found" });
+    }
+    const parentDirectory = getParentDirectory(file);
+    if (
+      !parentDirectory ||
+      !isDirectoryOwnedByUser(parentDirectory, req.user)
+    ) {
+      return forbiddenFileResponse(res);
+    }
 
-  if (!fullFilePath || fullFilePath === storageRoot) {
-    return res.status(400).json({ message: "Invalid file path" });
-  }
+    const fullFilePath = getStoragePath(`${id}${file.extension}`);
 
-  if (req.query.action === "download") {
-    res.set("Content-Disposition", `attachment; filename=${file.name}`);
-  }
-  return res.sendFile(fullFilePath, (err) => {
-    if (err) {
-      if (res.headersSent) return next(err);
-      return res.status(404).json({ error: "File not found!" });
+    if (!fullFilePath || fullFilePath === storageRoot) {
+      return res.status(400).json({ message: "Invalid file path" });
+    }
+
+    if (req.query.action === "download") {
+      // res.set("Content-Disposition", `attachment; filename=${file.name}`);
+      // this download() method will set the above code as well as it will sendFile as well
+      return res.download(fullFilePath, file.name);
+    }
+
+    return res.sendFile(fullFilePath, (err) => {
+      if (err) {
+        if (res.headersSent) return next(err);
+        return res.status(404).json({ error: "File not found!" });
+      }
+    });
+  })
+  .delete(async (req, res) => {
+    const { id } = req.params;
+    const fileIndex = filesData.findIndex((file) => file.id === id);
+    if (fileIndex === -1) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    const file = filesData[fileIndex];
+    const parentDirectory = getParentDirectory(file);
+    if (
+      !parentDirectory ||
+      !isDirectoryOwnedByUser(parentDirectory, req.user)
+    ) {
+      return forbiddenFileResponse(res);
+    }
+    const fullFilePath = getStoragePath(`${id}${file.extension}`);
+    if (!fullFilePath || fullFilePath === storageRoot) {
+      return res.status(400).json({ message: "Invalid file path" });
+    }
+
+    try {
+      await rm(fullFilePath, { force: true });
+
+      parentDirectory.files = parentDirectory.files.filter(
+        (fileId) => fileId !== id,
+      );
+      filesData.splice(fileIndex, 1);
+      await writeFile("./directoriesDB.json", JSON.stringify(directoriesData));
+      await writeFile("./filesDB.json", JSON.stringify(filesData));
+      res.json({ message: "File deleted successfully" });
+    } catch (e) {
+      console.error(e.message);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  })
+  .patch(async (req, res) => {
+    const { id } = req.params;
+    const file = filesData.find((file) => file.id === id);
+    if (!file) {
+      return res.status(404).json({ message: "File not found" });
+    }
+    const parentDirectory = getParentDirectory(file);
+    if (
+      !parentDirectory ||
+      !isDirectoryOwnedByUser(parentDirectory, req.user)
+    ) {
+      return forbiddenFileResponse(res);
+    }
+
+    const newFileName = req.body?.newFileName;
+    if (typeof newFileName !== "string" || !newFileName.trim()) {
+      return res.status(400).json({ message: "A new filename is required" });
+    }
+
+    const previousName = file.name;
+    file.name = newFileName.trim();
+    try {
+      await writeFile("./filesDB.json", JSON.stringify(filesData));
+      return res.json({ message: "File renamed successfully" });
+    } catch (e) {
+      file.name = previousName;
+      console.error(e.message);
+      return res.status(500).json({ message: "File rename failed" });
     }
   });
-});
 
 router.post("{/:parentDirId}", async (req, res) => {
   const requestedParentDirId = req.params.parentDirId;
   const parentDirId =
     (Array.isArray(requestedParentDirId)
       ? requestedParentDirId[0]
-      : requestedParentDirId) || directoriesData[0].id;
+      : requestedParentDirId) || req.user.rootDirId;
   const directoryData = directoriesData.find((dir) => dir.id === parentDirId);
   if (!directoryData) {
     return res.status(404).json({ message: "Directory not found" });
+  }
+  if (!isDirectoryOwnedByUser(directoryData, req.user)) {
+    return res
+      .status(403)
+      .json({ message: "You do not have access to this directory" });
   }
 
   const filename = req.get("filename")?.trim();
@@ -81,6 +178,7 @@ router.post("{/:parentDirId}", async (req, res) => {
       name: filename,
       extension,
       parentDirId,
+      userId: req.user.id,
     });
 
     directoryData.files.push(randomId);
@@ -102,59 +200,6 @@ router.post("{/:parentDirId}", async (req, res) => {
     await rm(destLocation, { force: true }).catch(() => {});
     console.error(e.message);
     return res.status(500).json({ message: "File upload failed" });
-  }
-});
-
-router.delete("/:id", async (req, res) => {
-  const { id } = req.params;
-  const fileIndex = filesData.findIndex((file) => file.id === id);
-  if (fileIndex === -1) {
-    return res.status(404).json({ message: "File not found" });
-  }
-
-  const file = filesData[fileIndex];
-  const fullFilePath = getStoragePath(`${id}${file.extension}`);
-  if (!fullFilePath || fullFilePath === storageRoot) {
-    return res.status(400).json({ message: "Invalid file path" });
-  }
-
-  try {
-    await rm(fullFilePath, { force: true });
-
-    directoriesData.forEach((directory) => {
-      directory.files = directory.files.filter((fileId) => fileId !== id);
-    });
-    filesData.splice(fileIndex, 1);
-    await writeFile("./directoriesDB.json", JSON.stringify(directoriesData));
-    await writeFile("./filesDB.json", JSON.stringify(filesData));
-    res.json({ message: "File deleted successfully" });
-  } catch (e) {
-    console.error(e.message);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-});
-
-router.patch("/:id", async (req, res) => {
-  const { id } = req.params;
-  const file = filesData.find((file) => file.id === id);
-  if (!file) {
-    return res.status(404).json({ message: "File not found" });
-  }
-
-  const newFileName = req.body?.newFileName;
-  if (typeof newFileName !== "string" || !newFileName.trim()) {
-    return res.status(400).json({ message: "A new filename is required" });
-  }
-
-  const previousName = file.name;
-  file.name = newFileName.trim();
-  try {
-    await writeFile("./filesDB.json", JSON.stringify(filesData));
-    return res.json({ message: "File renamed successfully" });
-  } catch (e) {
-    file.name = previousName;
-    console.error(e.message);
-    return res.status(500).json({ message: "File rename failed" });
   }
 });
 

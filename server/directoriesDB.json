@@ -1,1 +1,45 @@
-[{"id":"f784bb1a-8af3-483b-8a35-861a28744204","name":"root","parentDirId":null,"files":["4841eb7c-b0c2-4791-9add-6332c19fa22c"],"directories":["a44a9131-38e9-4e06-9cda-11b65479b91e"]},{"id":"a44a9131-38e9-4e06-9cda-11b65479b91e","name":"newfolder","parentDirId":"f784bb1a-8af3-483b-8a35-861a28744204","files":[],"directories":[]}]
+[
+  {
+    "id": "61545a65-2fbe-41fc-b5c7-2f4758e7257d",
+    "userId": "e47090ad-450f-4a7e-8a15-220e2dfa0836",
+    "name": "root-test@gmail.com",
+    "parentDirId": null,
+    "files": [
+      "05951d30-7c34-4f21-8d53-6e2e62eee82c",
+      "bb932778-b608-4906-a268-697225f3fa3c"
+    ],
+    "directories": [
+      "06a4a259-7b10-4492-b22b-d7d4100990d4",
+      "531bf193-314b-4b4a-a8fb-14bee1872347"
+    ]
+  },
+  {
+    "id": "06a4a259-7b10-4492-b22b-d7d4100990d4",
+    "name": "Test",
+    "parentDirId": "61545a65-2fbe-41fc-b5c7-2f4758e7257d",
+    "files": [],
+    "directories": ["a6b0cc7e-052c-4dd2-91a5-9e58939bf920"]
+  },
+  {
+    "id": "a6b0cc7e-052c-4dd2-91a5-9e58939bf920",
+    "name": "newfolder",
+    "parentDirId": "06a4a259-7b10-4492-b22b-d7d4100990d4",
+    "files": [],
+    "directories": []
+  },
+  {
+    "id": "531bf193-314b-4b4a-a8fb-14bee1872347",
+    "name": "pro2",
+    "parentDirId": "61545a65-2fbe-41fc-b5c7-2f4758e7257d",
+    "files": [],
+    "directories": []
+  },
+  {
+    "id": "328b741f-c789-4974-94ae-9b2044997c5a",
+    "userId": "37a827b4-e55e-4ef4-9bfa-20d6a36a806f",
+    "name": "root-test2@gmail.com",
+    "parentDirId": null,
+    "files": [],
+    "directories": []
+  }
+]
