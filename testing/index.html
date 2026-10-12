@@ -10,3 +10,17 @@
     <input type="file" />
   </body>
 </html>
+
+<!--
+Start MongoDB in Terminal:
+/Users/rekhakumari2/mongodb-server/bin/mongod --dbpath /Users/rekhakumari2/Downloads/mongodb-data --bind_ip 127.0.0.1 --port 27017 --logpath /Users/rekhakumari2/Downloads/mongodb-data/mongod.log --fork
+
+Connect with mongosh:
+/Users/rekhakumari2/Downloads/mongosh-2.13.0-darwin-arm64/bin/mongosh "mongodb://127.0.0.1:27017"
+
+Check that MongoDB is responding:
+/Users/rekhakumari2/Downloads/mongosh-2.13.0-darwin-arm64/bin/mongosh "mongodb://127.0.0.1:27017/admin" --quiet --eval 'db.runCommand({ ping: 1 })'
+
+Stop MongoDB from Terminal (the shell may report a connection-closed message because shutdown closes its connection):
+/Users/rekhakumari2/Downloads/mongosh-2.13.0-darwin-arm64/bin/mongosh "mongodb://127.0.0.1:27017/admin" --quiet --eval 'db.adminCommand({ shutdown: 1 })'
+-->
