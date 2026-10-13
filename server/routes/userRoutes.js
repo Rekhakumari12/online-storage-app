@@ -1,7 +1,5 @@
 import express from "express";
-// import { Db } from "mongodb";
 import authMiddleware from "../middlewares/auth.js";
-import userDB from "../usersDB.json" with { type: "json" };
 
 const router = express.Router();
 
@@ -41,27 +39,26 @@ router.post("/register", async (req, res) => {
 });
 
 router.get("/me", authMiddleware, (req, res) => {
-  const { id, name, email } = req.user;
-  return res.json({ user: { id, name, email } });
+  const { _id, name, email } = req.user;
+  return res.json({ user: { id: _id, name, email } });
 });
 
-router.post("/login", (req, res) => {
+router.post("/login", async (req, res) => {
   const { email, password } = req.body;
+  const db = req.db;
 
   if (!email || !password) {
     return res.status(400).json({ message: "Email and password are required" });
   }
 
-  const user = userDB.find(
-    (item) => item.email === email && item.password === password,
-  );
+  const user = await db.collection("users").findOne({ email, password });
 
   if (!user) {
     return res.status(401).json({ message: "Invalid email or password" });
   }
 
-  console.log("Login request received:", req.body);
-  res.cookie("uid", user.id, {
+  const userObjectId = user._id.toString();
+  res.cookie("uid", userObjectId, {
     httpOnly: true, // cookie will not be accessed from client
     maxAge: 60 * 1000 * 60 * 24 * 7, // 1 week
   });
@@ -70,7 +67,7 @@ router.post("/login", (req, res) => {
     message: "Login successful",
     dirId: user.rootDirId,
     user: {
-      id: user.id,
+      id: userObjectId,
       name: user.name,
       email: user.email,
       dirId: user.rootDirId,
