@@ -54,7 +54,7 @@ function DirectoryView() {
         navigate("/login", { replace: true });
         return;
       }
-      alert(error.message);
+      console.error(error.message);
     }
   }, [dirId, navigate]);
 

@@ -24,7 +24,7 @@ function LoginPage() {
     };
 
     if (!payload.email || !payload.password) {
-      alert("Please enter both email and password");
+      console.error("Please enter both email and password");
       return;
     }
 
@@ -41,22 +41,22 @@ function LoginPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        alert(result.message || "Login failed");
+        console.error(result.message || "Login failed");
         return;
       }
 
       const dirId = result?.dirId ?? result?.user?.dirId;
 
       if (!dirId) {
-        alert("Could not find your storage folder");
+        console.error("Could not find your storage folder");
         return;
       }
 
-      alert(result.message || "Login successful");
+      console.log(result.message || "Login successful");
       navigate(`/directory/${dirId}`);
     } catch (error) {
       console.error("Login error", error);
-      alert("Something went wrong while logging in");
+      console.error("Something went wrong while logging in");
     }
   };
 

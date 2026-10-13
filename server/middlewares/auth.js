@@ -12,7 +12,6 @@ async function authMiddleware(req, res, next) {
     .collection("users")
     .findOne({ _id: new ObjectId(userId) });
 
-  console.log(user);
   if (!user) {
     return res
       .status(401)

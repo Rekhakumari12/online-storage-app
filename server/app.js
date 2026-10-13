@@ -33,7 +33,9 @@ try {
   app.use("/user", userRouter);
 
   app.use((err, req, res, next) => {
-    res.status(500).json({ message: "Something went wrong" });
+    res
+      .status(500)
+      .json({ message: "Global error handling: Something went wrong " });
   });
 
   app.listen(port, () => {

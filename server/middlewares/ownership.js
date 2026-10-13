@@ -4,6 +4,14 @@ export const normalizeDirectoryId = (parentDirId) =>
   Array.isArray(parentDirId) ? parentDirId[0] : parentDirId;
 
 export const isDirectoryOwnedByUser = (directory, user) => {
+  if (directory?._id) {
+    return (
+      directory.userId != null &&
+      user?._id != null &&
+      directory.userId.toString() === user._id.toString()
+    );
+  }
+
   const visitedDirectoryIds = new Set();
   let currentDirectory = directory;
 

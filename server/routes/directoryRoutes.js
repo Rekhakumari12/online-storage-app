@@ -1,6 +1,6 @@
 import express from "express";
 import { rm, writeFile } from "fs/promises";
-import { randomUUID } from "node:crypto";
+import { ObjectId } from "mongodb";
 import path from "path";
 import directoriesData from "../directoriesDB.json" with { type: "json" };
 import filesData from "../filesDB.json" with { type: "json" };
@@ -21,13 +21,14 @@ const forbiddenDirectoryResponse = (res) =>
   res.status(403).json({ message: "You do not have access to this directory" });
 
 router.get("{/:id}", async (req, res) => {
-  const { id } = req.params;
-  const { db } = req;
+  const db = req.db;
   const user = req.user;
+  const id = req.params.id || user.rootDirId;
 
-  const directoryData = id
-    ? directoriesData.find((folder) => folder.id === id)
-    : directoriesData.find((folder) => folder.id === user.rootDirId);
+  const directoryData = await db.collection("directories").findOne({
+    _id: new ObjectId(id),
+  });
+
   if (!directoryData) {
     return res.status(404).json({ message: "Directory not found" });
   }
@@ -36,66 +37,60 @@ router.get("{/:id}", async (req, res) => {
   }
 
   try {
-    const files = directoryData.files
-      .map((fileId) => filesData.find((file) => fileId === file.id))
-      .filter(Boolean);
-    const directoriesWithName = directoryData.directories
-      .map((dirId) => directoriesData.find((dir) => dir.id === dirId))
-      .filter(Boolean);
+    const files = [];
+    const directories = await db
+      .collection("directories")
+      .find({ parentDirId: id })
+      .toArray();
 
     return res.json({
       ...directoryData,
       files,
-      directories: directoriesWithName,
+      directories: directories.map((dir) => ({
+        ...dir,
+        name: dir.name,
+        id: dir._id,
+      })),
     });
   } catch (e) {
-    console.error(e.message);
+    console.error("In directories", e.message);
     return res.status(500).json({ message: "Could not load directory" });
   }
 });
 
 router.post("{/*parentDirId}", async (req, res) => {
   const user = req.user;
+  const db = req.db;
 
   const parentDirId = req.params.parentDirId?.[0] || user.rootDirId;
-  const parentDir = directoriesData.find((dir) => dir.id === parentDirId);
-  if (!parentDir) {
-    return res.status(404).json({ message: "Parent directory not found" });
-  }
-  if (!isDirectoryOwnedByUser(parentDir, user)) {
-    return forbiddenDirectoryResponse(res);
-  }
+  const dirname = req.get("dirname")?.trim() || "New Folder";
 
-  const dirname = req.get("dirname")?.trim();
-  if (!dirname) {
-    return res.status(400).json({ message: "Folder name is required" });
-  }
+  console.log(parentDirId);
 
-  const isFolderExist = directoriesData.some((dir) => dir.name === dirname);
-  if (isFolderExist) {
-    return res.status(409).json({ message: "Folder already exists" });
-  }
-
-  const id = randomUUID();
-  const newDirectory = {
-    id,
-    name: dirname,
-    parentDirId,
-    files: [],
-    directories: [],
-    userId: user.id,
-  };
-  directoriesData.push(newDirectory);
-  parentDir.directories.push(id);
+  // const isFolderExist = directoriesData.some((dir) => dir.name === dirname);
+  // if (isFolderExist) {
+  //   return res.status(409).json({ message: "Folder already exists" });
+  // }
 
   try {
-    await writeFile("./directoriesDB.json", JSON.stringify(directoriesData));
+    const parentDir = await db
+      .collection("directories")
+      .findOne({ _id: new ObjectId(parentDirId) });
+
+    if (!parentDir) {
+      return res.status(404).json({ message: "Parent directory not found" });
+    }
+    if (!isDirectoryOwnedByUser(parentDir, user)) {
+      return forbiddenDirectoryResponse(res);
+    }
+
+    await db.collection("directories").insertOne({
+      name: dirname,
+      parentDirId,
+      userId: user._id,
+    });
     return res.json({ message: "Directory created" });
   } catch (e) {
-    directoriesData.splice(directoriesData.indexOf(newDirectory), 1);
-    parentDir.directories = parentDir.directories.filter(
-      (directoryId) => directoryId !== id,
-    );
     console.error(e.message);
     return res.status(500).json({ message: "Could not create directory" });
   }
@@ -104,32 +99,36 @@ router.post("{/*parentDirId}", async (req, res) => {
 router.patch("/:id", async (req, res) => {
   const { id } = req.params;
   const { user } = req;
-  const directory = directoriesData.find((dir) => dir.id === id);
-  if (!directory) {
-    return res.status(404).json({ message: "Directory not found" });
-  }
-  if (!isDirectoryOwnedByUser(directory, user)) {
-    return forbiddenDirectoryResponse(res);
-  }
+  const db = req.db;
 
-  const requestedName = req.body?.newDirName;
-  if (typeof requestedName !== "string" || !requestedName.trim()) {
-    return res.status(400).json({ message: "Folder name is required" });
-  }
-  const newDirName = requestedName.trim();
-
-  const isFolderExist = directoriesData.some(
-    (dir) => dir.id !== id && dir.name === newDirName,
-  );
-  if (isFolderExist) {
-    return res.status(409).json({ message: "Folder already exists" });
-  }
-
-  const previousName = directory.name;
-  directory.name = newDirName;
-
+  // const isFolderExist = directoriesData.some(
+  //   (dir) => dir.id !== id && dir.name === newDirName,
+  // );
+  // if (isFolderExist) {
+  //   return res.status(409).json({ message: "Folder already exists" });
+  // }
   try {
-    await writeFile("./directoriesDB.json", JSON.stringify(directoriesData));
+    const directory = await db.collection("directories").findOne({
+      _id: new ObjectId(id),
+    });
+    if (!directory) {
+      return res.status(404).json({ message: "Directory not found" });
+    }
+    if (!isDirectoryOwnedByUser(directory, user)) {
+      return forbiddenDirectoryResponse(res);
+    }
+
+    const requestedName = req.body?.newDirName;
+    if (typeof requestedName !== "string" || !requestedName.trim()) {
+      return res.status(400).json({ message: "Folder name is required" });
+    }
+    const newDirName = requestedName.trim();
+    await db
+      .collection("directories")
+      .updateOne(
+        { _id: new ObjectId(id), userId: new ObjectId(user._id) },
+        { $set: { name: newDirName } },
+      );
     return res.json({ message: "Directory renamed successfully" });
   } catch (e) {
     directory.name = previousName;
@@ -141,7 +140,9 @@ router.patch("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
   const { user } = req;
-  const directory = directoriesData.find((dir) => dir.id === id);
+  const directory = await db.collection("directories").findOne({
+    _id: new ObjectId(id),
+  });
 
   if (!directory) {
     return res.status(404).json({ message: "Directory not found" });
@@ -149,7 +150,7 @@ router.delete("/:id", async (req, res) => {
   if (!isDirectoryOwnedByUser(directory, user)) {
     return forbiddenDirectoryResponse(res);
   }
-  if (directory.id === user.rootDirId) {
+  if (directory._id === user.rootDirId) {
     return res
       .status(400)
       .json({ message: "Cannot delete the root directory" });
