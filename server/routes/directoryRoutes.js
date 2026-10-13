@@ -20,9 +20,9 @@ const storageRoot = path.resolve("./storage");
 const forbiddenDirectoryResponse = (res) =>
   res.status(403).json({ message: "You do not have access to this directory" });
 
-// directory id is optional, if not present then return the root dir
 router.get("{/:id}", async (req, res) => {
   const { id } = req.params;
+  const { db } = req;
   const user = req.user;
 
   const directoryData = id
