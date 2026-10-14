@@ -2,9 +2,10 @@ import {
   faFolder,
   faFolderPlus,
   faUpload,
+  faXmark,
 } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   createDirectory,
@@ -23,6 +24,7 @@ function DirectoryView() {
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [directory, setDirectory] = useState({ files: [], directories: [] });
   const [uploadQueue, setUploadQueue] = useState([]);
+  const uploadRequests = useRef(new Map());
   const [menuOpenId, setMenuOpenId] = useState(null);
   const [editing, setEditing] = useState({ type: null, id: null });
   const [newName, setNewName] = useState("");
@@ -69,9 +71,10 @@ function DirectoryView() {
 
   function handleUpload(event) {
     const file = event.target.files[0];
+    event.target.value = "";
     if (!file) return;
 
-    const uploadId = `${Date.now()}-${file.name}`;
+    const uploadId = crypto.randomUUID();
     setUploadQueue((prev) => [
       ...prev,
       { id: uploadId, name: file.name, percent: 0 },
@@ -81,16 +84,29 @@ function DirectoryView() {
     xhr.open("POST", `${storageBaseUrl}/file/${dirId}`, true);
     xhr.withCredentials = true;
     xhr.setRequestHeader("filename", file.name);
+    uploadRequests.current.set(uploadId, xhr);
+
+    const removeUpload = () => {
+      uploadRequests.current.delete(uploadId);
+      setUploadQueue((prev) => prev.filter((item) => item.id !== uploadId));
+    };
+
     xhr.addEventListener("load", () => {
+      removeUpload();
       if (xhr.status === 401) {
         navigate("/login", { replace: true });
         return;
       }
       if (xhr.status < 200 || xhr.status >= 300) {
         alert(xhr.responseText || "File upload failed");
+        return;
       }
-      setUploadQueue((prev) => prev.filter((item) => item.id !== uploadId));
       getDirectoryItems();
+    });
+    xhr.addEventListener("abort", removeUpload);
+    xhr.addEventListener("error", () => {
+      removeUpload();
+      alert("File upload failed");
     });
     xhr.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable) {
@@ -103,6 +119,10 @@ function DirectoryView() {
       }
     });
     xhr.send(file);
+  }
+
+  function cancelUpload(uploadId) {
+    uploadRequests.current.get(uploadId)?.abort();
   }
 
   const startRename = (type, item) => {
@@ -192,11 +212,7 @@ function DirectoryView() {
       return;
     }
 
-    window.open(
-      `${storageBaseUrl}/file/${item.id}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    window.location.assign(`${storageBaseUrl}/file/${item.id}`);
   };
 
   const renderMenu = (type, item) => (
@@ -258,7 +274,18 @@ function DirectoryView() {
           <div className="upload-status-list">
             {uploadQueue.map((item) => (
               <div className="upload-status-item" key={item.id}>
-                <span>{item.name}</span>
+                <div className="upload-status-heading">
+                  <span>{item.name}</span>
+                  <button
+                    className="upload-cancel-button"
+                    type="button"
+                    onClick={() => cancelUpload(item.id)}
+                    aria-label={`Cancel upload of ${item.name}`}
+                    title="Cancel upload"
+                  >
+                    <FontAwesomeIcon icon={faXmark} aria-hidden="true" />
+                  </button>
+                </div>
                 <div className="upload-progress">
                   <div
                     className="upload-progress-bar"

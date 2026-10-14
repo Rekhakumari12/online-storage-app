@@ -9,7 +9,6 @@ import userRouter from "./routes/userRoutes.js";
 
 try {
   const db = await connectDB();
-  console.log(db.namespace);
 
   const app = express();
   const port = 8080;
@@ -33,13 +32,14 @@ try {
   app.use("/user", userRouter);
 
   app.use((err, req, res, next) => {
+    console.log(err);
     res
       .status(500)
-      .json({ message: "Global error handling: Something went wrong " });
+      .json({ message: "Global error handling: Something went wrong " + err });
   });
 
   app.listen(port, () => {
-    console.log("Server is running ");
+    console.log("✅ Server is running ");
   });
 } catch (e) {
   console.log(e);

@@ -25,7 +25,10 @@ router.get("{/:id}", async (req, res) => {
   const user = req.user;
   const id = req.params.id || user.rootDirId;
 
-  const directoryData = await db.collection("directories").findOne({
+  const dirCollection = db.collection("directories");
+  const fileCollection = db.collection("files");
+
+  const directoryData = await dirCollection.findOne({
     _id: new ObjectId(id),
   });
 
@@ -37,15 +40,15 @@ router.get("{/:id}", async (req, res) => {
   }
 
   try {
-    const files = [];
-    const directories = await db
-      .collection("directories")
-      .find({ parentDirId: id })
-      .toArray();
+    const files = await fileCollection.find({ parentDirId: id }).toArray();
+    const directories = await dirCollection.find({ parentDirId: id }).toArray();
 
     return res.json({
       ...directoryData,
-      files,
+      files: files.map((file) => ({
+        ...file,
+        id: file._id,
+      })),
       directories: directories.map((dir) => ({
         ...dir,
         name: dir.name,
@@ -139,7 +142,7 @@ router.patch("/:id", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
-  const { user } = req;
+  const { user, db } = req;
   const directory = await db.collection("directories").findOne({
     _id: new ObjectId(id),
   });

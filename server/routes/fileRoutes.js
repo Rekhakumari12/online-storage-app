@@ -1,7 +1,7 @@
 import express from "express";
 import { createWriteStream } from "fs";
 import { rm, writeFile } from "fs/promises";
-import { randomUUID } from "node:crypto";
+import { ObjectId } from "mongodb";
 import path from "path";
 import { pipeline } from "stream/promises";
 import directoriesData from "../directoriesDB.json" with { type: "json" };
@@ -18,10 +18,8 @@ const storageRoot = path.resolve("./storage");
 const forbiddenFileResponse = (res) =>
   res.status(403).json({ message: "You do not have access to this file" });
 
-const getParentDirectory = (file) =>
-  directoriesData.find(
-    (directory) => directory.id === normalizeDirectoryId(file.parentDirId),
-  );
+const isFileOwnedByUser = async () =>
+  await db.collection("files").findOne({ userId: res.user._id });
 
 const getStoragePath = (relativePath) => {
   if (typeof relativePath !== "string") return null;
@@ -38,30 +36,23 @@ router.param("parentDirId", validateIdMiddleware);
 
 router
   .route("/:id")
-  .get((req, res, next) => {
+  .get(async (req, res, next) => {
     const { id } = req.params;
 
-    const file = filesData.find((file) => file.id === id);
+    const db = req.db;
+    const file = await db
+      .collection("files")
+      .findOne({ _id: new ObjectId(id), userId: req.user._id });
     if (!file) {
       return res.status(404).json({ message: "File not found" });
     }
-    const parentDirectory = getParentDirectory(file);
-    if (
-      !parentDirectory ||
-      !isDirectoryOwnedByUser(parentDirectory, req.user)
-    ) {
-      return forbiddenFileResponse(res);
-    }
 
     const fullFilePath = getStoragePath(`${id}${file.extension}`);
-
     if (!fullFilePath || fullFilePath === storageRoot) {
       return res.status(400).json({ message: "Invalid file path" });
     }
 
     if (req.query.action === "download") {
-      // res.set("Content-Disposition", `attachment; filename=${file.name}`);
-      // this download() method will set the above code as well as it will sendFile as well
       return res.download(fullFilePath, file.name);
     }
 
@@ -80,7 +71,7 @@ router
     }
 
     const file = filesData[fileIndex];
-    const parentDirectory = getParentDirectory(file);
+    const parentDirectory = isFileOwnedByUser(file);
     if (
       !parentDirectory ||
       !isDirectoryOwnedByUser(parentDirectory, req.user)
@@ -113,7 +104,7 @@ router
     if (!file) {
       return res.status(404).json({ message: "File not found" });
     }
-    const parentDirectory = getParentDirectory(file);
+    const parentDirectory = isFileOwnedByUser(file);
     if (
       !parentDirectory ||
       !isDirectoryOwnedByUser(parentDirectory, req.user)
@@ -140,66 +131,101 @@ router
 
 router.post("{/:parentDirId}", async (req, res) => {
   const requestedParentDirId = req.params.parentDirId;
+  const db = req.db;
+  const dirCollection = db.collection("directories");
+
   const parentDirId =
-    (Array.isArray(requestedParentDirId)
-      ? requestedParentDirId[0]
-      : requestedParentDirId) || req.user.rootDirId;
-  const directoryData = directoriesData.find((dir) => dir.id === parentDirId);
+    normalizeDirectoryId(requestedParentDirId) || req.user.rootDirId;
+  const directoryData = await dirCollection.find({
+    _id: new ObjectId(parentDirId),
+    userId: req.user._id,
+  });
+
   if (!directoryData) {
-    return res.status(404).json({ message: "Directory not found" });
-  }
-  if (!isDirectoryOwnedByUser(directoryData, req.user)) {
-    return res
-      .status(403)
-      .json({ message: "You do not have access to this directory" });
+    return res.status(404).json({ message: "Root directory not found" });
   }
 
-  const filename = req.get("filename")?.trim();
-  if (!filename) {
-    return res.status(400).json({ message: "Filename is required" });
-  }
+  // if (!isDirectoryOwnedByUser(directoryData, req.user)) {
+  //   return res
+  //     .status(403)
+  //     .json({ message: "You do not have access to this directory" });
+  // }
 
+  const filename = req.get("filename")?.trim() || "Untitled";
   const extension = path.extname(filename);
-  const randomId = randomUUID();
+  const fileCollection = db.collection("files");
+  let insertedId;
+  let destLocation;
+  let fileCreated = false;
+  let clientAborted = req.aborted;
+  let writeStream;
 
-  const fullFileName = `${randomId}${extension}`;
-  const destLocation = getStoragePath(fullFileName);
+  const handleClientAbort = () => {
+    clientAborted = true;
+    writeStream?.destroy(new Error("Client cancelled the upload"));
+  };
+  const handleClientDisconnect = () => {
+    if (!res.writableFinished) handleClientAbort();
+  };
 
-  if (!destLocation || destLocation === storageRoot) {
-    return res.status(400).json({ message: "Invalid file path" });
-  }
-
-  const writeStream = createWriteStream(destLocation, { flags: "wx" });
+  req.once("aborted", handleClientAbort);
+  res.once("close", handleClientDisconnect);
 
   try {
-    await pipeline(req, writeStream);
-    filesData.push({
-      id: randomId,
+    if (clientAborted) return;
+
+    const insertedFile = await fileCollection.insertOne({
       name: filename,
       extension,
       parentDirId,
-      userId: req.user.id,
+      userId: req.user._id,
     });
 
-    directoryData.files.push(randomId);
+    insertedId = insertedFile.insertedId;
 
-    await writeFile("./filesDB.json", JSON.stringify(filesData));
-    await writeFile("./directoriesDB.json", JSON.stringify(directoriesData));
+    const fullFileName = `${insertedId.toString()}${extension}`;
+    destLocation = getStoragePath(fullFileName);
 
+    if (!destLocation || destLocation === storageRoot) {
+      await fileCollection.deleteOne({ _id: insertedId });
+      return res.status(400).json({
+        message: "Invalid file path or filepath should not be root dir path",
+      });
+    }
+
+    if (clientAborted) throw new Error("Client cancelled the upload");
+
+    writeStream = createWriteStream(destLocation, { flags: "wx" });
+    writeStream.once("open", () => {
+      fileCreated = true;
+    });
+    await pipeline(req, writeStream);
+    if (clientAborted) throw new Error("Client cancelled the upload");
     return res.json({ message: "File Uploaded Successfully" });
   } catch (e) {
-    const fileIndex = filesData.findIndex((file) => file.id === randomId);
-    if (fileIndex !== -1) filesData.splice(fileIndex, 1);
-    directoryData.files = directoryData.files.filter(
-      (fileId) => fileId !== randomId,
-    );
-    await Promise.all([
-      writeFile("./filesDB.json", JSON.stringify(filesData)),
-      writeFile("./directoriesDB.json", JSON.stringify(directoriesData)),
-    ]).catch(() => {});
-    await rm(destLocation, { force: true }).catch(() => {});
-    console.error(e.message);
+    if (!clientAborted) console.error("Error while uploading", e.message);
+    if (fileCreated) {
+      try {
+        await rm(destLocation, { force: true });
+      } catch (cleanupError) {
+        console.error("Failed to remove incomplete upload:", cleanupError);
+      }
+    }
+    if (insertedId) {
+      try {
+        await fileCollection.deleteOne({ _id: insertedId });
+      } catch (cleanupError) {
+        console.error(
+          "Failed to remove incomplete upload record:",
+          cleanupError,
+        );
+      }
+    }
+    if (clientAborted || req.aborted || res.destroyed) return;
     return res.status(500).json({ message: "File upload failed" });
+  } finally {
+    req.off("aborted", handleClientAbort);
+    res.off("close", handleClientDisconnect);
   }
 });
 
