@@ -23,7 +23,7 @@ const forbiddenDirectoryResponse = (res) =>
 router.get("{/:id}", async (req, res) => {
   const db = req.db;
   const user = req.user;
-  const id = req.params.id || user.rootDirId;
+  const id = req.params.id || user.rootDirId.toString();
 
   const dirCollection = db.collection("directories");
   const fileCollection = db.collection("files");

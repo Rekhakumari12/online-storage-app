@@ -1,25 +1,15 @@
 import express from "express";
 import { createWriteStream } from "fs";
-import { rm, writeFile } from "fs/promises";
+import { rm } from "fs/promises";
 import { ObjectId } from "mongodb";
 import path from "path";
 import { pipeline } from "stream/promises";
-import directoriesData from "../directoriesDB.json" with { type: "json" };
-import filesData from "../filesDB.json" with { type: "json" };
-import {
-  isDirectoryOwnedByUser,
-  normalizeDirectoryId,
-} from "../middlewares/ownership.js";
+import { normalizeDirectoryId } from "../middlewares/ownership.js";
 import validateIdMiddleware from "../middlewares/validateIdMiddleware.js";
 
 const router = express.Router();
 
 const storageRoot = path.resolve("./storage");
-const forbiddenFileResponse = (res) =>
-  res.status(403).json({ message: "You do not have access to this file" });
-
-const isFileOwnedByUser = async () =>
-  await db.collection("files").findOne({ userId: res.user._id });
 
 const getStoragePath = (relativePath) => {
   if (typeof relativePath !== "string") return null;
@@ -65,51 +55,42 @@ router
   })
   .delete(async (req, res) => {
     const { id } = req.params;
-    const fileIndex = filesData.findIndex((file) => file.id === id);
-    if (fileIndex === -1) {
+    const db = req.db;
+    const fileCollection = db.collection("files");
+    const file = await fileCollection.findOne({
+      _id: new ObjectId(id),
+      userId: req.user._id,
+    });
+
+    if (!file) {
       return res.status(404).json({ message: "File not found" });
     }
 
-    const file = filesData[fileIndex];
-    const parentDirectory = isFileOwnedByUser(file);
-    if (
-      !parentDirectory ||
-      !isDirectoryOwnedByUser(parentDirectory, req.user)
-    ) {
-      return forbiddenFileResponse(res);
-    }
     const fullFilePath = getStoragePath(`${id}${file.extension}`);
     if (!fullFilePath || fullFilePath === storageRoot) {
       return res.status(400).json({ message: "Invalid file path" });
     }
 
     try {
-      await rm(fullFilePath, { force: true });
-
-      parentDirectory.files = parentDirectory.files.filter(
-        (fileId) => fileId !== id,
-      );
-      filesData.splice(fileIndex, 1);
-      await writeFile("./directoriesDB.json", JSON.stringify(directoriesData));
-      await writeFile("./filesDB.json", JSON.stringify(filesData));
+      await rm(fullFilePath);
+      // remove file from files db
+      await fileCollection.deleteOne({ _id: new ObjectId(id) });
       res.json({ message: "File deleted successfully" });
     } catch (e) {
-      console.error(e.message);
+      console.error(e);
       return res.status(500).json({ message: "Internal server error" });
     }
   })
   .patch(async (req, res) => {
     const { id } = req.params;
-    const file = filesData.find((file) => file.id === id);
+    const db = req.db;
+    const fileCollection = db.collection("files");
+    const file = await fileCollection.findOne({
+      _id: new ObjectId(id),
+      userId: req.user._id,
+    });
     if (!file) {
       return res.status(404).json({ message: "File not found" });
-    }
-    const parentDirectory = isFileOwnedByUser(file);
-    if (
-      !parentDirectory ||
-      !isDirectoryOwnedByUser(parentDirectory, req.user)
-    ) {
-      return forbiddenFileResponse(res);
     }
 
     const newFileName = req.body?.newFileName;
@@ -117,14 +98,14 @@ router
       return res.status(400).json({ message: "A new filename is required" });
     }
 
-    const previousName = file.name;
-    file.name = newFileName.trim();
     try {
-      await writeFile("./filesDB.json", JSON.stringify(filesData));
+      await fileCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { name: newFileName } },
+      );
       return res.json({ message: "File renamed successfully" });
     } catch (e) {
-      file.name = previousName;
-      console.error(e.message);
+      console.error(e);
       return res.status(500).json({ message: "File rename failed" });
     }
   });
@@ -144,12 +125,6 @@ router.post("{/:parentDirId}", async (req, res) => {
   if (!directoryData) {
     return res.status(404).json({ message: "Root directory not found" });
   }
-
-  // if (!isDirectoryOwnedByUser(directoryData, req.user)) {
-  //   return res
-  //     .status(403)
-  //     .json({ message: "You do not have access to this directory" });
-  // }
 
   const filename = req.get("filename")?.trim() || "Untitled";
   const extension = path.extname(filename);
@@ -199,6 +174,7 @@ router.post("{/:parentDirId}", async (req, res) => {
     writeStream.once("open", () => {
       fileCreated = true;
     });
+
     await pipeline(req, writeStream);
     if (clientAborted) throw new Error("Client cancelled the upload");
     return res.json({ message: "File Uploaded Successfully" });
